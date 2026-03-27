@@ -1,5 +1,3 @@
-# Conduite-de-projet-M1-SE
-
 # 🏠 Indices de Prix Immobiliers Hédoniques – Normandie
 
 > **UE Conduite de Projet** · Master 1 Statistique & Économétrie  
@@ -26,6 +24,8 @@ On estime un modèle de régression qui **neutralise l'effet des caractéristiqu
 |---|---|
 | `courbes_*.png` | Courbes temporelles de $\text{Index}_{c,t}$ – top communes + benchmarks départementaux |
 | `heatmap_*_dep**.png` | Heatmap commune × temps par département |
+| `carte_choroplethe_*_croissance.png` | Carte choroplèthe – croissance des prix depuis $t_0$ |
+| `carte_choroplethe_*_index_fin.png` | Carte choroplèthe – niveau absolu de l'indice |
 | `tableau_recap_*.csv` | Croissance totale, CAGR, nombre de transactions par département |
 | `top3_*.png` / `top3_*.csv` | Top 3 communes par département selon un score composite d'investissement |
 | `scoring_*.csv` | Score complet de toutes les communes |
@@ -46,6 +46,10 @@ On estime un modèle de régression qui **neutralise l'effet des caractéristiqu
     ├── courbes_appartement.png
     ├── heatmap_maison_dep**.png
     ├── heatmap_appartement_dep**.png
+    ├── carte_choroplethe_maison_croissance.png
+    ├── carte_choroplethe_appartement_croissance.png
+    ├── carte_choroplethe_maison_index_fin.png
+    ├── carte_choroplethe_appartement_index_fin.png
     ├── tableau_recap_maison.csv
     ├── tableau_recap_appartement.csv
     ├── top3_maison.png / top3_appartement.png
@@ -59,7 +63,7 @@ On estime un modèle de régression qui **neutralise l'effet des caractéristiqu
 Le projet tourne sur **Google Colab** (recommandé) ou en local avec Python 3.10+.
 
 ```bash
-pip install numpy pandas scikit-learn matplotlib seaborn requests pyarrow openpyxl
+pip install numpy pandas scikit-learn matplotlib seaborn requests pyarrow openpyxl geopandas
 ```
 
 Ouvrir le notebook sur Colab :
@@ -127,7 +131,7 @@ df["log_price_sqm"] = np.log(df["price_sqm"])                             # yᵢ
 
 Cette étape construit la **variable expliquée** $y_i = \log(p_i)$ du modèle hédonique.
 
-**Pourquoi le logarithme ? (Slide 9)** Le log transforme les effets multiplicatifs en effets additifs et stabilise la variance des prix, qui sont très asymétriques à droite. Un coefficient $\hat{\beta}_k$ s'interprète directement comme un effet *semi-élasticité* : une unité supplémentaire de la caractéristique $k$ augmente le prix de $100 \times \hat{\beta}_k$%.
+**Pourquoi le logarithme ? (Slide 9)** Le log transforme les effets multiplicatifs en effets additifs et stabilise la variance des prix, qui sont très asymétriques à droite. Un coefficient $\hat{\beta}_k$ s'interprète directement comme un effet semi-élasticité : une unité supplémentaire de la caractéristique $k$ augmente le prix de $100 \times \hat{\beta}_k$%.
 
 Les filtres appliqués :
 - Uniquement les **ventes** (`nature_mutation == "Vente"`) — pas les successions ni les donations
@@ -235,7 +239,7 @@ panel["log_net"] = (panel.groupby("code_commune")["log_net_med"]
                          .transform(lambda s: s.interpolate("linear").ffill().bfill()))
 ```
 
-On construit d'abord la **grille complète** $\{(c,t)\}$ pour toutes les communes et toutes les périodes. Les cellules vides (aucune transaction cette période dans cette commune) sont remplies par interpolation linéaire, puis forward/backward fill — garantissant **zéro NaN** dans l'indice final.
+On construit d'abord la **grille complète** $\{(c,t)\}$ pour toutes les communes et toutes les périodes. Les cellules vides (aucune transaction cette période dans cette commune) sont remplies par interpolation linéaire, puis forward/backward fill — garantissant **zéro NaN** dans l'indice final *pour les communes qui ont au moins une transaction sur l'ensemble de la période*.
 
 #### Calcul de l'indice (Slide 17)
 
@@ -277,6 +281,15 @@ Calcule pour chaque département :
 | Croissance totale | $(\text{Index}_{t_{\max}} / \text{Index}_{t_{\min}} - 1) \times 100$ |
 | CAGR | $(\text{Index}_{t_{\max}} / 100)^{1/n} - 1$ |
 
+#### 6d — Carte choroplèthe (Slide 4)
+
+Le cours demande explicitement une *"carte choroplèthe : niveau ou croissance de l'indice à une date donnée"*. Deux variantes sont produites pour chaque type de bien :
+
+- **Croissance** : $\text{Index}_{c,t_{\max}} - 100$, soit la variation en % depuis $t_0$
+- **Niveau absolu** : la valeur de $\text{Index}_{c,t_{\max}}$
+
+La palette `RdYlGn` est centrée sur 0 (rouge = baisse de prix, vert = hausse). Les géométries des communes sont téléchargées en temps réel depuis l'API officielle `geo.api.gouv.fr`, sans fichier shapefile à fournir.
+
 ---
 
 ### Bloc 7 — Analyse d'investissement : Top 3 communes par département
@@ -303,24 +316,38 @@ Les rangs sont normalisés dans $[0,1]$ **au sein de chaque département** pour 
 
 ---
 
-## 📊 Sorties attendues
+## ⚠️ Note sur les données insuffisantes dans la carte des appartements
 
-```
-outputs/
-├── courbes_maison.png              # Courbes temporelles – Maisons
-├── courbes_appartement.png         # Courbes temporelles – Appartements
-├── heatmap_maison_dep14.png        # Heatmap Calvados – Maisons
-├── heatmap_maison_dep27.png        # Heatmap Eure – Maisons
-├── heatmap_maison_dep50.png        # Heatmap Manche – Maisons
-├── heatmap_maison_dep61.png        # Heatmap Orne – Maisons
-├── heatmap_maison_dep76.png        # Heatmap Seine-Maritime – Maisons
-├── heatmap_appartement_dep**.png   # Idem pour les Appartements
-├── tableau_recap_maison.csv        # Tableau résumé départemental
-├── tableau_recap_appartement.csv
-├── top3_maison.png                 # Top 3 communes par département
-├── top3_appartement.png
-├── scoring_maison.csv              # Score de toutes les communes
-└── scoring_appartement.csv
+Sur la carte choroplèthe des **appartements**, un nombre important de communes apparaît en **gris clair** (mention *"Données insuffisantes"*). Ce résultat est **normal, attendu, et cohérent avec la méthodologie du cours**.
+
+### Pourquoi ce phénomène ?
+
+**La Normandie est une région à dominante rurale.** Les appartements se concentrent dans quelques pôles urbains — Rouen, Caen, Le Havre, Cherbourg, Évreux — tandis que la grande majorité des ~1 500 communes normandes sont de petits villages où il ne se vend quasiment aucun appartement sur la période 2019–2024.
+
+La procédure de **complétion des périodes manquantes** (Slide 16) comble les *trous temporels* dans une série déjà existante par interpolation linéaire. Mais elle **ne peut pas créer une série pour une commune qui n'a jamais enregistré aucune vente d'appartement** : sans aucun $\log P_i^{\text{net}}$ à agréger, aucun indice ne peut être calculé, et la commune reste grise sur la carte.
+
+À l'inverse, pour les **maisons**, la couverture spatiale est bien plus dense car les maisons sont vendues dans presque toutes les communes, y compris les plus rurales.
+
+### Lien avec le cours (Slides 11 et 16)
+
+Deux mécanismes du cours expliquent directement ce phénomène :
+
+- **Slide 11** — le seuil `MIN_OBS_COMMUNE = 30` impose qu'une commune dispose d'au moins 30 transactions pour que son effet fixe $\mu_c$ soit identifiable sans risque de sur-ajustement. Pour les appartements, seule une minorité de communes dépasse ce seuil.
+- **Slide 16** — la procédure de complétion part de la grille $\{(c,t)\}$ des communes *qui ont déjà au moins une observation*. Les communes sans aucune transaction appartement ne figurent tout simplement pas dans cette grille.
+
+Le gris sur la carte n'est donc pas un bug : c'est le **reflet honnête de la réalité du marché immobilier normand**, et une conséquence directe des choix méthodologiques du cours.
+
+### Pistes d'amélioration (extensions possibles)
+
+Si l'on souhaitait améliorer la couverture spatiale pour les appartements, deux options méthodologiques existent :
+
+| Option | Avantage | Limite |
+|---|---|---|
+| Abaisser `MIN_OBS_COMMUNE` | Plus de communes couvertes | Risque de sur-ajustement de $\mu_c$ (Slide 11) |
+| Agréger à l'échelle des **EPCI** (intercommunalités) | Effectifs suffisants partout | Perte de granularité spatiale |
+
+Ces pistes constituent des extensions méthodologiques pertinentes à mentionner en soutenance.
+
 ```
 
 ---
@@ -329,4 +356,5 @@ outputs/
 
 - **Cours** : *UE Conduite de Projet*, M1 SE – Université de Strasbourg (2025/26)
 - **Données** : [DVF+ open-data](https://files.data.gouv.fr/geo-dvf/latest/csv/) — Direction Générale des Finances Publiques
+- **Géométries** : [geo.api.gouv.fr](https://geo.api.gouv.fr) — API officielle des communes françaises
 - **Méthodologie** : Rosen, S. (1974). *Hedonic Prices and Implicit Markets*. Journal of Political Economy.
