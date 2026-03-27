@@ -323,10 +323,6 @@ Si l'on souhaitait améliorer la couverture spatiale pour les appartements, deux
 
 Ces pistes constituent des extensions méthodologiques pertinentes à mentionner en soutenance.
 
----
-
-
-```
 
 ---
 
