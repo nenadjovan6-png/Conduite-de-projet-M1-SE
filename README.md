@@ -290,6 +290,42 @@ g["score"] = (0.40 * g["rank_cagr_pct"]
 Les rangs sont normalisés dans $[0,1]$ **au sein de chaque département** pour rendre les scores comparables. Le Top 3 par département est visualisé avec la courbe $\text{Index}_{c,t}$ annotée du CAGR et du Momentum.
 
 ---
+### Bloc 8 — Évolution régionale : Maisons vs Appartements — *Objectif (2) du cours (Slide 4)*
+
+Ce bloc produit une comparaison directe de l'évolution des prix à l'échelle de toute la Normandie entre les deux types de biens.
+
+#### Benchmark régional
+```python
+reg = panel.groupby("periode")["log_price_net"].median().reset_index()
+reg["index_regional"] = 100 * np.exp(reg["log_net_reg"] - log_ref)
+```
+
+On agrège les `log_price_net` de toutes les communes et tous les départements par période via la **médiane régionale** (Slide 14), puis on applique la formule base 100 du cours (Slide 17) :
+
+$$\text{Index}_{\text{régional}, t} = 100 \times \exp\!\left(\log P_t^{\text{net}} - \log P_{t_0}^{\text{net}}\right)$$
+
+Cela donne une vision synthétique du marché normand, indépendante de la composition des biens vendus (**qualité constante**, Slide 13).
+
+#### Visualisation produite
+
+Deux panneaux côte à côte :
+
+- **Gauche** : courbes superposées de $\text{Index}_{\text{régional},t}$ pour les Maisons et les Appartements — permet de lire directement quel marché a le plus progressé depuis $t_0$.
+- **Droite** : écart (spread) Maisons − Appartements, avec remplissage coloré indiquant quel type de bien surperforme à chaque période.
+
+| Sortie | Description |
+|---|---|
+| `evolution_regionale_maison_vs_appart.png` | Courbes comparatives + spread |
+
+#### Tableau récapitulatif régional
+
+Pour chaque type de bien, le bloc affiche en console :
+
+| Indicateur | Formule |
+|---|---|
+| Index final | $\text{Index}_{\text{régional}, t_{\max}}$ |
+| Variation totale | $(\text{Index}_{t_{\max}} / \text{Index}_{t_{\min}} - 1) \times 100$ |
+| CAGR annualisé | $(\text{Index}_{t_{\max}} / 100)^{1/n} - 1$ |
 
 ## ⚠️ Note sur les données insuffisantes dans la carte des appartements
 
