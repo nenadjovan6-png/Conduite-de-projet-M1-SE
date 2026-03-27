@@ -1,325 +1,338 @@
-# 🏠 Indices de prix immobiliers hédoniques – Normandie
+# 🏠 Indices de Prix Immobiliers Hédoniques – Normandie
 
-> 🎓 **UE Conduite de Projet** · M1 Statistique & Économétrie · Université de Strasbourg · 2025/26  
-> ✍️ Auteurs : **Marius & Nenad**
+> **UE Conduite de Projet** · Master 1 Statistique & Économétrie  
+> Université de Strasbourg · 2025/26  
+> Auteurs : **Marius & Nenad**
 
 ---
 
-## 🎯 Contexte et objectifs
+## 📋 Présentation du projet
 
-Le prix immobilier observé dépend à la fois de la **composition** des biens vendus (surface, typologie, neuf/ancien), de l'**évolution du marché** (tendances, cycles, chocs) et de l'**hétérogénéité spatiale** (commune, accessibilité, aménités). Une simple moyenne des prix observés est donc biaisée si la qualité ou la composition des biens vendus varie dans le temps.
+Ce projet met en œuvre la méthodologie des **indices de prix hédoniques** présentée dans le cours *UE Conduite de Projet* pour construire des indices de prix immobiliers par **commune** et par **mois** sur la région Normandie (2019–2024).
 
-Ce projet construit des **indices de prix à qualité constante** par commune et par mois pour les maisons et les appartements, en couvrant les 5 départements normands (14, 27, 50, 61, 76) sur la période 2019–2024.
+### Problème posé (Slide 3 du cours)
 
-### 📋 Résultats attendus (cf. slides 4 et 18)
+Le prix immobilier observé d'une période à l'autre ne reflète pas seulement l'évolution du marché : il dépend aussi de la **composition** des biens vendus (surface, typologie) et de l'**hétérogénéité spatiale** (commune, département). Comparer directement les prix moyens bruts dans le temps est donc trompeur.
+
+### Solution : l'indice hédonique à qualité constante
+
+On estime un modèle de régression qui **neutralise l'effet des caractéristiques des biens** pour ne conserver que le signal pur de marché. On en déduit un indice $\text{Index}_{c,t}$ (base 100) pour chaque commune $c$ et chaque période $t$.
+
+### Résultats produits (Slide 4 du cours)
 
 | Livrable | Description |
 |---|---|
-| 📈 **Indices de prix** | `Index_{c,t}` par commune et par mois, base 100 = juillet 2020 |
-| 📉 **Courbes temporelles** | Évolution de quelques communes + benchmarks départementaux |
-| 🌡️ **Heatmap commune × temps** | Dynamiques, ruptures et hétérogénéité spatiale |
-| 🏆 **Scoring investissement** | Top 3 communes par département selon CAGR, momentum, stabilité |
+| `courbes_*.png` | Courbes temporelles de $\text{Index}_{c,t}$ – top communes + benchmarks départementaux |
+| `heatmap_*_dep**.png` | Heatmap commune × temps par département |
+| `carte_choroplethe_*_croissance.png` | Carte choroplèthe – croissance des prix depuis $t_0$ |
+| `carte_choroplethe_*_index_fin.png` | Carte choroplèthe – niveau absolu de l'indice |
+| `tableau_recap_*.csv` | Croissance totale, CAGR, nombre de transactions par département |
+| `top3_*.png` / `top3_*.csv` | Top 3 communes par département selon un score composite d'investissement |
+| `scoring_*.csv` | Score complet de toutes les communes |
+
+---
+---
+
+## ⚙️ Prérequis & Installation
+
+Le projet tourne sur **Google Colab** (recommandé) ou en local avec Python 3.10+.
+
+```bash
+pip install numpy pandas scikit-learn matplotlib seaborn requests pyarrow openpyxl geopandas
+```
+
+Ouvrir le notebook sur Colab :
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1oZ-EvxbsCP1PyDeLL9e5Q9jP4KLSj8xT)
 
 ---
 
-## 📁 Structure du dépôt
+## 📐 Méthodologie détaillée & explication des blocs de code
 
-```
-.
-├── conduite_de_projet_marius_nenad.py     # 🐍 Script principal complet
-├── Conduite_de_Projet_Marius_Nenad.ipynb  # 📓 Notebook Colab associé
-├── data/
-│   ├── raw/          # 📦 Fichiers DVF+ téléchargés (.csv.gz)
-│   └── processed/    # ✅ dvf_clean.parquet après nettoyage
-└── outputs/
-    ├── indices/      # 📊 Séries Index_{c,t} au format CSV
-    ├── courbes_*.png
-    ├── heatmap_*.png
-    ├── top3_*.png
-    └── tableau_recap_*.csv
-```
+Le script suit fidèlement le **résumé opérationnel du cours (Slide 18)** en 7 étapes numérotées.
 
 ---
 
-## 🗄️ Données : DVF+
-
-La source de données est le fichier **DVF+** (Demandes de Valeurs Foncières enrichies), disponible en open data sur [data.gouv.fr](https://files.data.gouv.fr/geo-dvf/).
+### Bloc 0 — Dépendances & arborescence
 
 ```python
-# ── Configuration ──────────────────────────────────────────────────────────────
-DEPARTEMENTS = {"14": "Calvados", "27": "Eure", "50": "Manche",
-                "61": "Orne",    "76": "Seine-Maritime"}
-ANNEES       = list(range(2019, 2025))
-BASE_URL     = "https://files.data.gouv.fr/geo-dvf/latest/csv/{annee}/departements/{dep}.csv.gz"
+!pip install -q numpy pandas scikit-learn matplotlib seaborn requests pyarrow openpyxl
+for d in ["data/raw", "data/processed", "outputs"]:
+    Path(d).mkdir(parents=True, exist_ok=True)
+```
 
+Mise en place de l'environnement. Les dossiers `data/` et `outputs/` sont créés automatiquement pour organiser les données brutes, les données traitées et les sorties graphiques.
+
+---
+
+### Bloc 1 — Configuration
+
+```python
+DEPARTEMENTS      = {"14":"Calvados", "27":"Eure", ...}
+ANNEES            = list(range(2019, 2025))
+REFERENCE_PERIODE = "2020-07"    # t₀ – base 100
+MIN_OBS_COMMUNE   = 30           # seuil d'identification de μ_c
+PRICE_SQM_MIN, PRICE_SQM_MAX = 300, 20_000
+SURFACE_MIN, SURFACE_MAX     = 9, 1_000
+```
+
+Centralisation de tous les paramètres du projet. Deux paramètres sont directement issus du cours :
+
+- `REFERENCE_PERIODE` : la **période de référence $t_0$** (Slide 17) à laquelle $\text{Index}_{c,t_0} = 100$ pour toutes les communes.
+- `MIN_OBS_COMMUNE` : le **seuil d'identification de l'effet fixe commune** $\mu_c$ (Slide 11). En dessous de 30 transactions, la dummy commune est mal identifiée (sur-ajustement) et n'est pas incluse dans le modèle.
+
+---
+
+### Bloc 2 — Téléchargement des données DVF+
+
+```python
 def download_all(force=False):
-    for dep in DEPARTEMENTS:
-        for annee in ANNEES:
-            dest = Path(f"data/raw/dvf_{dep}_{annee}.csv.gz")
-            if dest.exists() and not force:
-                continue
-            r = requests.get(BASE_URL.format(annee=annee, dep=dep), timeout=120)
-            if r.status_code == 200:
-                dest.write_bytes(r.content)
+    r = requests.get(BASE_URL.format(annee=annee, dep=dep), timeout=120)
+    dest.write_bytes(r.content)
 ```
 
-> 💡 Le téléchargement est incrémental : si le fichier existe déjà localement, il n'est pas re-téléchargé (`force=False`).
+**Source de données (Slide 6 du cours)** : DVF+ (*Demandes de Valeurs Foncières*), base open-data du gouvernement français. Elle contient toutes les transactions immobilières enregistrées aux hypothèques, avec le prix, la surface, le type de bien et la localisation. On télécharge 30 fichiers (5 départements × 6 années), compressés en `.csv.gz`.
 
 ---
 
-## 🧹 Étape 1 – Nettoyage et construction de $y_i$ (slide 9)
+### Bloc 3 — Chargement et nettoyage — *Étape 1 du cours*
 
-On filtre les **ventes** de maisons et appartements, on calcule le **prix au m²** $p_i$, puis la variable expliquée $y_i = \log(p_i)$. Le logarithme transforme les effets multiplicatifs en effets additifs et stabilise la variance.
+> **Cours Slide 9 :** *"Nettoyer les transactions et construire $y_i = \log(\text{price\_sqm}_i)$"*
 
 ```python
-# pᵢ = prix au m²,  yᵢ = log(pᵢ)   [slide 9]
-df["price_sqm"]     = df["valeur_fonciere"] / df["surface_reelle_bati"]
-
-# 🚫 Filtres outliers
-df = df[df["surface_reelle_bati"].between(9, 1_000) &
-        df["price_sqm"].between(300, 20_000)]
-
-df["log_price_sqm"] = np.log(df["price_sqm"])   # yᵢ
-
-# 📅 Variables temporelles : t(i) = mois×année, a(i) = année
-df["periode"] = (df["annee"].astype(str) + "-"
-                 + df["date_mutation"].dt.month.astype(str).str.zfill(2))
-
-# 🏗️ Typologies T (caractéristiques du bien xᵢ)
-df["typo_T"] = nb.apply(lambda x: f"T{x}" if 1 <= x <= 4 else ("T5+" if x >= 5 else "T?"))
+df["price_sqm"]     = df["valeur_fonciere"] / df["surface_reelle_bati"]   # pᵢ
+df["log_price_sqm"] = np.log(df["price_sqm"])                             # yᵢ = log(pᵢ)
 ```
+
+Cette étape construit la **variable expliquée** $y_i = \log(p_i)$ du modèle hédonique.
+
+**Pourquoi le logarithme ? (Slide 9)** Le log transforme les effets multiplicatifs en effets additifs et stabilise la variance des prix, qui sont très asymétriques à droite. Un coefficient $\hat{\beta}_k$ s'interprète directement comme un effet semi-élasticité : une unité supplémentaire de la caractéristique $k$ augmente le prix de $100 \times \hat{\beta}_k$%.
+
+Les filtres appliqués :
+- Uniquement les **ventes** (`nature_mutation == "Vente"`) — pas les successions ni les donations
+- Uniquement **Maisons et Appartements** (`type_local`)
+- Exclusion des biens aberrants : surfaces hors $[9, 1000]$ m² et prix au m² hors $[300, 20\,000]$ €
+
+On construit aussi les **variables structurelles** du modèle (Slide 9) :
+- `periode` = mois × année → indexe le temps $t(i)$
+- `code_dep`, `code_commune` → indexent la localisation $d(i)$ et $c(i)$
+- `typo_T` (T1 à T5+) → les caractéristiques du bien $x_i$
 
 ---
 
-## 📐 Étapes 2–4 – Modèle hédonique OLS (slides 10–13)
+### Bloc 4 — Modèle hédonique OLS — *Étapes 2, 3 et 4 du cours*
 
-### 🔢 Le modèle
+C'est le cœur du projet. On estime séparément un modèle pour les **Maisons** et un pour les **Appartements** (Slide 10).
 
-On estime séparément appartements et maisons le modèle suivant :
+#### Le modèle (Slides 10–11)
 
-$$y_i = \alpha + \mathbf{x}_i'\boldsymbol{\beta} + \gamma_{t(i)} + \delta_{d(i)} + \mu_{c(i)} + \theta_{d(i),a(i)} + \varepsilon_i$$
+$$y_i = \alpha + x_i'\beta + \gamma_{t(i)} + \delta_{d(i)} + \mu_{c(i)} + \theta_{d(i),a(i)} + \varepsilon_i$$
 
-| Terme | Rôle |
-|---|---|
-| $\gamma_{t(i)}$ | ⏱️ Effet fixe mois×année → tendance de marché |
-| $\mu_{c(i)}$ | 📍 Effet fixe commune → niveau local moyen |
-| $\delta_{d(i)}$ | 🗂️ Effet fixe département → contrôle spatial |
-| $\theta_{d,a}$ | 📆 Tendances spécifiques département×année |
-| $\mathbf{x}_i'\boldsymbol{\beta}$ | 🏠 Caractéristiques du bien (typologies T) |
-
-### ⚙️ Implémentation : dummies et OLS
+| Terme | Rôle dans le code | Slides |
+|---|---|---|
+| $x_i'\beta$ | dummies `typo_` — caractéristiques du bien (T1–T5+) | 9, 10 |
+| $\gamma_{t(i)}$ | dummies `t_` — effet fixe mois × année = tendance de marché | 10 |
+| $\delta_{d(i)}$ | dummies `dep_` — effet fixe département = contrôle spatial | 10 |
+| $\mu_{c(i)}$ | dummies `com_` — effet fixe commune = niveau local moyen | 10, 11 |
+| $\theta_{d(i),a(i)}$ | dummies `dep_a_` — tendances spécifiques département × année | 10 |
 
 ```python
-def estimate_hedonic(df_type, type_bien):
-    # 🏘️ Grandes communes (≥ 30 obs.) → dummy μ_c identifiable  [slide 11]
-    grande = df["code_commune"].value_counts()
-    grande = grande[grande >= MIN_OBS_COMMUNE].index
-    df["commune_fe"] = df["code_commune"].where(df["code_commune"].isin(grande), "_petite_")
-    df["dep_annee"]  = df["code_dep"] + "_" + df["annee"].astype(str)   # θ_{d,a}
-
-    # Étape 2 – dummies (drop_first = catégorie de référence)  [slide 10]
-    X = pd.concat([
-        pd.get_dummies(df["periode"],    prefix="t",     drop_first=True, dtype=float),  # γ_t
-        pd.get_dummies(df["code_dep"],   prefix="dep",   drop_first=True, dtype=float),  # δ_d
-        pd.get_dummies(df["commune_fe"], prefix="com",   drop_first=True, dtype=float),  # μ_c
-        pd.get_dummies(df["dep_annee"],  prefix="dep_a", drop_first=True, dtype=float),  # θ_{d,a}
-        pd.get_dummies(df["typo_T"],     prefix="typo",  drop_first=True, dtype=float),  # xᵢ
-    ], axis=1)
-
-    # 📊 Étape 3 – estimation OLS  [slide 12]
-    reg   = LinearRegression(fit_intercept=True, n_jobs=-1).fit(X.values, y)
-    y_hat = reg.predict(X.values)
-    print(f"  R² = {r2_score(y, y_hat):.4f}")
+X = pd.concat([
+    pd.get_dummies(df["periode"],    prefix="t",     drop_first=True),  # γ_t
+    pd.get_dummies(df["code_dep"],   prefix="dep",   drop_first=True),  # δ_d
+    pd.get_dummies(df["commune_fe"], prefix="com",   drop_first=True),  # μ_c
+    pd.get_dummies(df["dep_annee"],  prefix="dep_a", drop_first=True),  # θ_{d,a}
+    pd.get_dummies(df["typo_T"],     prefix="typo",  drop_first=True),  # xᵢ
+], axis=1)
 ```
 
-> ⚠️ `drop_first=True` retire une modalité par groupe pour éviter la multicolinéarité parfaite, conformément aux slides 10–11.
+> **`drop_first=True`** correspond au principe du cours (Slide 10) : *"on retire une modalité par groupe (catégorie de référence) pour éviter la colinéarité."*
 
-### 🧮 Prix net de qualité : $\log P_i^{net}$ (slide 13)
-
-On retire la contribution des variables de qualité pour ne conserver que l'information temporelle et spatiale :
-
-$$\log P_i^{net} = \hat{y}_i - \sum_{k \in \mathcal{H}} \hat{\beta}_k x_{ik}$$
+#### Traitement des petites communes (Slide 11)
 
 ```python
-# Étape 4 – log Pᵢⁿᵉᵗ = ŷᵢ − contribution qualité  [slide 13]
+grande = df["code_commune"].value_counts()
+grande = grande[grande >= MIN_OBS_COMMUNE].index
+df["commune_fe"] = df["code_commune"].where(df["code_commune"].isin(grande), "_petite_")
+```
+
+Pour les communes avec moins de 30 transactions, aucune dummy $\mu_c$ n'est créée. Toutes ces communes sont regroupées sous `_petite_`. Le cours justifie : *"avec un faible effectif, une dummy commune est mal identifiée (forte variance, risques de sur-ajustement)."*
+
+#### Estimation OLS (Slide 12)
+
+```python
+reg   = LinearRegression(fit_intercept=True, n_jobs=-1).fit(Xv, y)
+y_hat = reg.predict(Xv)
+print(f"  R² = {r2_score(y, y_hat):.4f}")
+```
+
+$$\hat{\theta} = \arg\min_\theta \|y - X\theta\|_2^2$$
+
+Le $R^2$ est affiché comme **diagnostic de qualité du modèle** (Slide 12).
+
+#### Prix net de qualité — log $P_i^{\text{net}}$ (Slide 13)
+
+```python
 qual_idx = [list(X.columns).index(c) for c in X.columns if c.startswith("typo_")]
-df["log_price_net"] = y_hat - X.values[:, qual_idx] @ reg.coef_[qual_idx]
+df["log_price_net"] = y_hat - Xv[:, qual_idx] @ reg.coef_[qual_idx]
 ```
 
-### 🏘️ Correction des petites communes (slide 15)
+$$\log P_i^{\text{net}} = \hat{y}_i - \sum_{k \in \mathcal{H}} \hat{\beta}_k x_{ik}$$
 
-Pour les communes sous le seuil (`< 30` transactions), aucun effet fixe $\mu_c$ n'est inclus dans la régression (risque de sur-ajustement). On recale ensuite leur niveau via la moyenne des résidus $\bar{e}_c$ :
+On soustrait la contribution des variables de qualité $\mathcal{H}$ (typologies T). $\hat{y}_i$ contient *temps + lieu + qualité* ; $\log P_i^{\text{net}}$ ne conserve que *temps + lieu*. Cela permet de mesurer une évolution **à qualité constante**, indépendamment du mix de biens vendus.
 
-$$\log P_i^{net} \leftarrow \log P_i^{net} + \bar{e}_{c(i)}$$
+#### Correction des petites communes (Slide 15)
 
 ```python
-# 🔧 Correction des petites communes  [slide 15]
-df["residual"] = y - y_hat
-petites = df["commune_fe"] == "_petite_"
-if petites.any():
-    e_bar = df.loc[petites].groupby("code_commune")["residual"].mean()
-    df.loc[petites, "log_price_net"] += (
-        df.loc[petites, "code_commune"].map(e_bar).fillna(0).values
-    )
+e_bar = df.loc[petites].groupby("code_commune")["residual"].mean()
+df.loc[petites, "log_price_net"] += df.loc[petites, "code_commune"].map(e_bar).fillna(0).values
 ```
+
+$$\log P_i^{\text{net}} \leftarrow \log P_i^{\text{net}} + \bar{e}_{c(i)}$$
+
+Pour les communes sans effet fixe, on recale le niveau en ajoutant la **moyenne des résidus par commune** $\bar{e}_c$, comme préconisé en Slide 15.
 
 ---
 
-## 📊 Étape 5 – Agrégation et construction de l'indice base 100 (slides 14–17)
+### Bloc 5 — Construction de l'indice base 100 — *Étapes 5 et 6 du cours*
 
-### 🔢 Agrégation par (commune, période) — slide 14
-
-On agrège au niveau commune × mois en prenant la **médiane** (robuste aux outliers) :
-
-$$\log P_{c,t}^{net} = \text{médiane}\{\log P_i^{net} : c(i) = c,\ t(i) = t\}$$
+#### Agrégation par commune × période (Slide 14)
 
 ```python
-agg = (df_type.groupby(["code_commune", "nom_commune", "code_dep", "periode"])
-       ["log_price_net"]
-       .agg(log_net_med="median", n_obs="count")
-       .reset_index())
+agg = df_type.groupby(["code_commune","nom_commune","code_dep","periode"])["log_price_net"]
+             .agg(log_net_med="median", n_obs="count")
 ```
 
-### 🔄 Compléter les périodes manquantes — slide 16
+$$\log P_{c,t}^{\text{net}} = \text{médiane}\{ \log P_i^{\text{net}} : c(i)=c,\; t(i)=t \}$$
 
-Certaines communes n'ont aucune transaction sur certains mois. On construit d'abord un panel cylindré complet, puis on complète les valeurs manquantes par interpolation linéaire :
+La **médiane** est recommandée par le cours (Slide 14) pour sa robustesse aux valeurs aberrantes résiduelles.
+
+#### Panel cylindré + complétion des dates manquantes (Slide 16)
 
 ```python
-# 📐 Panel cylindré {c} × {t} complet
-panel = (communes.assign(_k=1)
-         .merge(pd.DataFrame({"periode": periodes, "_k": 1}), on="_k")
-         .drop("_k", axis=1)
-         .merge(agg, on=["code_commune", "nom_commune", "code_dep", "periode"], how="left"))
-
-# 〰️ Interpolation : linéaire → ffill → bfill  [slide 16]
 panel["log_net"] = (panel.groupby("code_commune")["log_net_med"]
                          .transform(lambda s: s.interpolate("linear").ffill().bfill()))
 ```
 
-### 💯 Indice base 100 — slide 17
+On construit d'abord la **grille complète** $\{(c,t)\}$ pour toutes les communes et toutes les périodes. Les cellules vides (aucune transaction cette période dans cette commune) sont remplies par interpolation linéaire, puis forward/backward fill — garantissant **zéro NaN** dans l'indice final *pour les communes qui ont au moins une transaction sur l'ensemble de la période*.
 
-On fixe la période de référence $t_0$ = **juillet 2020** et on calcule :
-
-$$\text{Index}_{c,t} = 100 \times \exp\!\left(\log P_{c,t}^{net} - \log P_{c,t_0}^{net}\right)$$
+#### Calcul de l'indice (Slide 17)
 
 ```python
-REFERENCE_PERIODE = "2020-07"   # t₀
-
-# 📌 Référence par commune
-ref = (panel[panel["periode"] == REFERENCE_PERIODE][["code_commune", "log_net"]]
-       .rename(columns={"log_net": "log_ref"}))
-panel = panel.merge(ref, on="code_commune", how="left")
-
-# ✅ Index_{c,t} = 100 × exp(log P^net_{c,t} − log P^net_{c,t₀})
 panel["index_prix"] = 100 * np.exp(panel["log_net"] - panel["log_ref"])
 ```
 
----
+$$\text{Index}_{c,t} = 100 \times \exp\!\left(\log P_{c,t}^{\text{net}} - \log P_{c,t_0}^{\text{net}}\right)$$
 
-## 📈 Étape 6 – Visualisations (objectif 2, slide 4)
+Si $\text{Index}_{c,t} = 120$, les prix ont augmenté de **+20 %** dans la commune $c$ depuis la période de référence $t_0$, à qualité constante.
 
-### 📉 Courbes temporelles
-
-Évolution de $\text{Index}_{c,t}$ pour les principales communes et les benchmarks départementaux :
-
-```python
-def plot_temporal(panel, bench, type_bien, top_n=5):
-    # 🏙️ Top communes par volume de transactions
-    top = panel.groupby("code_commune")["n_obs"].sum().nlargest(top_n).index
-    for i, code in enumerate(top):
-        s = panel[panel["code_commune"] == code].sort_values("annee_mois")
-        ax.plot(s["annee_mois"], s["index_prix"],
-                label=f"{s['nom_commune'].iloc[0]} ({s['code_dep'].iloc[0]})")
-    ax.axhline(100, color="grey", ls="--", lw=0.8)   # 📍 ligne de référence t₀
-
-    # 🗺️ Benchmarks départementaux
-    for dep, label in DEPARTEMENTS.items():
-        s = bench[bench["code_dep"] == dep].sort_values("annee_mois")
-        ax.plot(s["annee_mois"], s["index_dept"], label=f"{dep} – {label}")
-```
-
-### 🌡️ Heatmap commune × temps
-
-Permet de visualiser en un coup d'œil les dynamiques, ruptures et hétérogénéité spatiale (slide 4) :
-
-```python
-def plot_heatmap(panel, type_bien, dep="76", top_n=25):
-    pivot = (sub[sub["code_commune"].isin(top_c)]
-             .pivot_table(index="nom_commune", columns="periode",
-                          values="index_prix", aggfunc="first"))
-    sns.heatmap(pivot, cmap="RdYlGn", center=100, vmin=70, vmax=150)
-```
-
-> 🔴 Rouge = indice < 100 (baisse par rapport à $t_0$) · 🟢 Vert = hausse
+Un **benchmark départemental** est également calculé (médiane de $\log P_{c,t}^{\text{net}}$ sur toutes les communes du département), utile pour la comparaison interdépartementale.
 
 ---
 
-## 🏆 Étape 7 – Scoring investissement
+### Bloc 6 — Visualisations — *Objectif (2) du cours (Slide 4)*
 
-En s'appuyant sur les indices construits, on calcule pour chaque commune 3 indicateurs puis un score composite, afin d'identifier le **Top 3 communes par département** :
+#### 6a — Courbes temporelles
 
-| Indicateur | Formule | Poids |
+Deux panneaux côte à côte :
+- **Gauche** : évolution de $\text{Index}_{c,t}$ pour le top 5 des communes par volume de transactions
+- **Droite** : benchmarks départementaux pour les 5 départements normands
+
+#### 6b — Heatmap commune × temps
+
+```python
+sns.heatmap(pivot, cmap="RdYlGn", center=100, vmin=70, vmax=150)
+```
+
+Le cours (Slide 4) décrit cet outil comme permettant de visualiser *"les dynamiques, ruptures et hétérogénéité spatiale"*. La palette `RdYlGn` est centrée sur 100 (rouge = baisse, vert = hausse). Une heatmap est produite par département.
+
+#### 6c — Tableau récapitulatif départemental
+
+Calcule pour chaque département :
+
+| Indicateur | Formule |
+|---|---|
+| $\text{Index}_{t_{\max}}$ | valeur finale de l'indice départemental |
+| Croissance totale | $(\text{Index}_{t_{\max}} / \text{Index}_{t_{\min}} - 1) \times 100$ |
+| CAGR | $(\text{Index}_{t_{\max}} / 100)^{1/n} - 1$ |
+
+#### 6d — Carte choroplèthe (Slide 4)
+
+Le cours demande explicitement une *"carte choroplèthe : niveau ou croissance de l'indice à une date donnée"*. Deux variantes sont produites pour chaque type de bien :
+
+- **Croissance** : $\text{Index}_{c,t_{\max}} - 100$, soit la variation en % depuis $t_0$
+- **Niveau absolu** : la valeur de $\text{Index}_{c,t_{\max}}$
+
+La palette `RdYlGn` est centrée sur 0 (rouge = baisse de prix, vert = hausse). Les géométries des communes sont téléchargées en temps réel depuis l'API officielle `geo.api.gouv.fr`, sans fichier shapefile à fournir.
+
+---
+
+### Bloc 7 — Analyse d'investissement : Top 3 communes par département
+
+Ce bloc prolonge le projet en exploitant $\text{Index}_{c,t}$ (Slides 17–18) pour **classer les communes selon leur attractivité d'investissement**.
+
+#### Score composite
+
+Pour chaque commune, trois indicateurs sont calculés à partir de la série $\text{Index}_{c,t}$ :
+
+| Indicateur | Formule | Poids dans le score |
 |---|---|---|
-| 📈 CAGR | $(\text{Index}_T / 100)^{1/n} - 1$ | 40 % |
-| ⚡ Momentum 12 mois | $\text{Index}_T / \text{Index}_{T-12} - 1$ | 35 % |
-| 🛡️ Stabilité | $1 / \text{vol}(\Delta \log \text{Index}_{c,t})$ | 25 % |
+| **CAGR** | $(\text{Index}_T / 100)^{1/n} - 1$ | 40 % |
+| **Momentum 12 mois** | $(\text{Index}_T / \text{Index}_{T-12}) - 1$ | 35 % |
+| **Stabilité** | $1 / \sigma(\Delta \log \text{Index}_{c,t})$ | 25 % |
 
 ```python
-def score_communes(panel, type_bien):
-    # 📈 CAGR annualisé
-    cagr = ((idx_T / 100) ** (1 / n_years) - 1) * 100
+g["score"] = (0.40 * g["rank_cagr_pct"]
+            + 0.35 * g["rank_momentum_pct"]
+            + 0.25 * g["rank_stabilite"])
+```
 
-    # ⚡ Momentum 12 mois
-    momentum = (idx_T / idx_mom - 1) * 100
+Les rangs sont normalisés dans $[0,1]$ **au sein de chaque département** pour rendre les scores comparables. Le Top 3 par département est visualisé avec la courbe $\text{Index}_{c,t}$ annotée du CAGR et du Momentum.
 
-    # 🛡️ Stabilité = inverse de la volatilité mensuelle
-    vol       = np.log(grp["index_prix"]).diff().dropna().std() * 100
-    stabilite = 1 / vol if vol > 0 else np.nan
+---
 
-    # 🥇 Score composite : rangs normalisés [0,1] dans le département
-    g["score"] = (0.40 * g["rank_cagr_pct"]
-                + 0.35 * g["rank_momentum_pct"]
-                + 0.25 * g["rank_stabilite"])
+## ⚠️ Note sur les données insuffisantes dans la carte des appartements
+
+Sur la carte choroplèthe des **appartements**, un nombre important de communes apparaît en **gris clair** (mention *"Données insuffisantes"*). Ce résultat est **normal, attendu, et cohérent avec la méthodologie du cours**.
+
+### Pourquoi ce phénomène ?
+
+**La Normandie est une région à dominante rurale.** Les appartements se concentrent dans quelques pôles urbains — Rouen, Caen, Le Havre, Cherbourg, Évreux — tandis que la grande majorité des ~1 500 communes normandes sont de petits villages où il ne se vend quasiment aucun appartement sur la période 2019–2024.
+
+La procédure de **complétion des périodes manquantes** (Slide 16) comble les *trous temporels* dans une série déjà existante par interpolation linéaire. Mais elle **ne peut pas créer une série pour une commune qui n'a jamais enregistré aucune vente d'appartement** : sans aucun $\log P_i^{\text{net}}$ à agréger, aucun indice ne peut être calculé, et la commune reste grise sur la carte.
+
+À l'inverse, pour les **maisons**, la couverture spatiale est bien plus dense car les maisons sont vendues dans presque toutes les communes, y compris les plus rurales.
+
+### Lien avec le cours (Slides 11 et 16)
+
+Deux mécanismes du cours expliquent directement ce phénomène :
+
+- **Slide 11** — le seuil `MIN_OBS_COMMUNE = 30` impose qu'une commune dispose d'au moins 30 transactions pour que son effet fixe $\mu_c$ soit identifiable sans risque de sur-ajustement. Pour les appartements, seule une minorité de communes dépasse ce seuil.
+- **Slide 16** — la procédure de complétion part de la grille $\{(c,t)\}$ des communes *qui ont déjà au moins une observation*. Les communes sans aucune transaction appartement ne figurent tout simplement pas dans cette grille.
+
+Le gris sur la carte n'est donc pas un bug : c'est le **reflet honnête de la réalité du marché immobilier normand**, et une conséquence directe des choix méthodologiques du cours.
+
+### Pistes d'amélioration (extensions possibles)
+
+Si l'on souhaitait améliorer la couverture spatiale pour les appartements, deux options méthodologiques existent :
+
+| Option | Avantage | Limite |
+|---|---|---|
+| Abaisser `MIN_OBS_COMMUNE` | Plus de communes couvertes | Risque de sur-ajustement de $\mu_c$ (Slide 11) |
+| Agréger à l'échelle des **EPCI** (intercommunalités) | Effectifs suffisants partout | Perte de granularité spatiale |
+
+Ces pistes constituent des extensions méthodologiques pertinentes à mentionner en soutenance.
+
+---
+
+
 ```
 
 ---
 
-## 🚀 Prérequis et installation
+## 🔗 Références
 
-```bash
-pip install numpy pandas scikit-learn matplotlib seaborn requests pyarrow openpyxl
-```
-
-> 📓 Le script peut également être exécuté directement sur **Google Colab** (cf. notebook `.ipynb` joint).
-
----
-
-## 🔁 Résumé de la pipeline (slide 18)
-
-```
-🌐 DVF+ (data.gouv.fr)
-         │
-         ▼
-🧹 ① Nettoyage : yᵢ = log(price_sqm)
-         │
-         ▼
-🎛️ ② Dummies : γ_t, δ_d, μ_c, θ_{d,a}, x_i
-         │
-         ▼
-📐 ③ OLS hédonique (Maisons / Appartements séparément)
-         │
-         ▼
-🧮 ④ log Pᵢⁿᵉᵗ = ŷᵢ − contribution qualité
-         │
-         ▼
-📊 ⑤ Agrégation médiane → log P^net_{c,t}
-         │
-         ▼
-🔄 ⑥ Compléter les dates manquantes (interpolation)
-         │
-         ▼
-💯 ⑦ Index_{c,t} = 100 × exp(log P^net_{c,t} − log P^net_{c,t₀})
-         │
-         ▼
-📈 ⑧ Visualisations + 🏆 Scoring investissement
-```
+- **Cours** : *UE Conduite de Projet*, M1 SE – Université de Strasbourg (2025/26)
+- **Données** : [DVF+ open-data](https://files.data.gouv.fr/geo-dvf/latest/csv/) — Direction Générale des Finances Publiques
+- **Géométries** : [geo.api.gouv.fr](https://geo.api.gouv.fr) — API officielle des communes françaises
+- **Méthodologie** : Rosen, S. (1974). *Hedonic Prices and Implicit Markets*. Journal of Political Economy.
