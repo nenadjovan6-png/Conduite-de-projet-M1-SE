@@ -49,7 +49,7 @@ Ouvrir le notebook sur Colab :
 
 ## 📐 Méthodologie détaillée & explication des blocs de code
 
-Le script suit fidèlement le **résumé opérationnel du cours (Slide 18)** en 7 étapes numérotées.
+Le README suit fidèlement le **résumé opérationnel du cours (Slide 18)** en 7 étapes numérotées.
 
 ---
 
