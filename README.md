@@ -6,6 +6,11 @@
 
 ---
 
+
+https://github.com/user-attachments/assets/ddec7489-d716-4086-9e66-ed532574ae53
+
+
+
 ## 📋 Présentation du projet
 
 Ce projet met en œuvre la méthodologie des **indices de prix hédoniques** présentée dans le cours *UE Conduite de Projet* pour construire des indices de prix immobiliers par **commune** et par **mois** sur la région Normandie (2019–2024).
