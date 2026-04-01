@@ -2,7 +2,7 @@
 
 > **UE Conduite de Projet** · Master 1 Statistique & Économétrie  
 > Université de Strasbourg · 2025/26  
-> Auteurs : **Marius & Nenad**
+> Auteurs : **Marius HAVAN & Nenad JOVANOVIC**
 
 ---
 
