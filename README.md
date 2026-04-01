@@ -230,7 +230,7 @@ Un **benchmark départemental** est également calculé (médiane de $\log P_{c,
 
 ---
 
-### Bloc 6 — Visualisations — *Objectif (2) du cours (Slide 4)*
+### Bloc 6 et 6 bis  — Visualisations et Génération des sorties — *Objectif (2) du cours (Slide 4)*
 
 #### 6a — Courbes temporelles
 
